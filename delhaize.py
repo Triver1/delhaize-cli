@@ -26,7 +26,7 @@ def gql(op, query, variables, auth=False):
     headers = {"content-type": "application/json", "x-apollo-operation-name": op, "user-agent": UA}
     if auth:
         if not os.environ.get("DELHAIZE_COOKIE"):
-            sys.exit("DELHAIZE_COOKIE is not set (see the top of delhaize.py)")
+            sys.exit("DELHAIZE_COOKIE is not set (see Setup in the README)")
         headers["cookie"] = os.environ["DELHAIZE_COOKIE"]
     body = json.dumps({"operationName": op, "query": query, "variables": {"lang": "nl", **variables}}).encode()
     with urllib.request.urlopen(urllib.request.Request(API, body, headers), timeout=30) as r:
