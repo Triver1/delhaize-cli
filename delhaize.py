@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Delhaize.be CLI: search products, show the cart, set cart quantities.
+"""Delhaize.be CLI: search products, show ingredients and nutrients, show the cart, set cart quantities.
 
 Cart commands need DELHAIZE_COOKIE: the Cookie header of a request to delhaize.be/api/v1/
 from a logged-in browser (DevTools > Network > Request Headers).
 """
 import argparse
+import html
 import json
 import os
 import sys
@@ -18,6 +19,8 @@ SEARCH = """query GetProductSearch($lang:String $searchQuery:String $pageSize:In
     products{code name manufacturerName price{value supplementaryPriceLabel2} stock{inStock}}}}"""
 CART = """query Cart($lang:String!){cart(lang:$lang){totalUnitCount
   entries{quantity product{code name manufacturerName price{value supplementaryPriceLabel2}}}}}"""
+PRODUCT = """query ProductDetails($productCode:String! $lang:String!){productDetails(productCode:$productCode lang:$lang){
+  name manufacturerName wsNutriFactData{ingredients nutrients{nutrients{id valueList{value}}}}}}"""
 UPDATE = """mutation MiniBasketUpdateCartEntryQuantity($lang:String! $entries:[EntryInput!]!){
   cart:updateCartEntryQuantity(entries:$entries lang:$lang){totalQuantity}}"""
 
@@ -63,6 +66,8 @@ def main():
     s = sub.add_parser("search", help="search products (no login needed)")
     s.add_argument("query")
     s.add_argument("-n", type=int, default=10)
+    for name, text in [("ingredients", "show the ingredient list"), ("nutrients", "show nutrients per 100 g/ml")]:
+        sub.add_parser(name, help=f"{text} of products (no login needed)").add_argument("codes", nargs="+", metavar="CODE")
     sub.add_parser("cart", help="show the cart")
     st = sub.add_parser("set", help="set absolute quantities: CODE=QTY ... (0 removes)")
     st.add_argument("items", nargs="+", metavar="CODE=QTY")
@@ -72,6 +77,20 @@ def main():
         for p in gql("GetProductSearch", SEARCH, {"searchQuery": a.query, "pageSize": a.n, "fields": "PRODUCT_TILE"})["productSearch"]["products"]:
             stock = "" if (p["stock"] or {}).get("inStock") else "  OUT OF STOCK"
             print(f"{p['code']}  €{p['price']['value']:>6.2f}  {label(p)}{stock}")
+    elif a.cmd in ("ingredients", "nutrients"):
+        for code in a.codes:
+            p = gql("ProductDetails", PRODUCT, {"productCode": code})["productDetails"]
+            if not p:
+                sys.exit(f"unknown product {code}")
+            facts = p["wsNutriFactData"] or {}
+            print(" ".join(filter(None, [p["manufacturerName"], p["name"], f"({code})"])))
+            if a.cmd == "ingredients":
+                print(html.unescape(facts.get("ingredients") or "no ingredient list"))
+            else:
+                for table in facts.get("nutrients") or []:
+                    for n in table["nutrients"]:
+                        print(f"  {n['id']}: {', '.join(v['value'] for v in n['valueList'])}")
+            print()
     elif a.cmd == "cart":
         print_cart(get_cart())
     else:
